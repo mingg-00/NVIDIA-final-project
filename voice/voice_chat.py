@@ -5,6 +5,7 @@ import sys
 import time
 import threading
 import queue
+import json
 # import io
 import wave
 # import asyncio
@@ -31,6 +32,9 @@ class VoiceChat:
         self.tmp_dir = self.base / "/_tmp" # 오디오 파일 저장 경로
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         
+        # 메뉴 데이터 로드
+        self.menu_data = self._load_menu_data()
+        
         # 실시간 오디오 스트림 관련
         self.audio_queue = queue.Queue() # thread -> STT
         self.tts_queue = queue.Queue() # llm response -> tts -> playing
@@ -52,6 +56,101 @@ class VoiceChat:
         else:
             self.client = None
             print("OpenAI API 키가 설정되지 않았습니다.")
+    
+    def _load_menu_data(self) -> dict:
+        """메뉴 데이터 로드"""
+        try:
+            menu_path = self.base / "menu.json"
+            if menu_path.exists():
+                with open(menu_path, 'r', encoding='utf-8') as f:
+                    menu_data = json.load(f)
+                print(f"[메뉴 데이터] {len(menu_data.get('items', []))}개 메뉴 항목 로드 완료")
+                return menu_data
+            else:
+                print(f"[메뉴 데이터] menu.json 파일을 찾을 수 없습니다: {menu_path}")
+                return {}
+        except Exception as e:
+            print(f"[메뉴 데이터 로드 실패] {e}")
+            return {}
+    
+    def _get_menu_context(self) -> str:
+        """메뉴 데이터를 LLM 컨텍스트로 변환"""
+        if not self.menu_data:
+            return ""
+        
+        try:
+            context_parts = []
+            
+            # 매장 정보
+            store_name = self.menu_data.get('store', '키오스크')
+            context_parts.append(f"매장명: {store_name}")
+            
+            # 메뉴 카테고리별 정리
+            items = self.menu_data.get('items', [])
+            categories = {}
+            
+            for item in items:
+                category = item.get('category', '기타')
+                if category not in categories:
+                    categories[category] = []
+                
+                # 메뉴 정보 요약
+                menu_info = f"- {item.get('name', '')} ({item.get('price', 0):,}원)"
+                
+                # 알레르기 정보 추가
+                allergens = item.get('allergens', [])
+                if allergens:
+                    menu_info += f" [알레르기: {', '.join(allergens)}]"
+                
+                # 영양 정보 추가
+                nutrition = item.get('nutrition', {})
+                if nutrition.get('calorie_kcal'):
+                    menu_info += f" [칼로리: {nutrition['calorie_kcal']}kcal]"
+                
+                categories[category].append(menu_info)
+            
+            # 카테고리별 메뉴 정보 추가
+            for category, menu_list in categories.items():
+                context_parts.append(f"\n{category}:")
+                context_parts.extend(menu_list)
+            
+            # 알레르기 정보
+            allergen_vocab = self.menu_data.get('allergen_vocab', [])
+            if allergen_vocab:
+                context_parts.append(f"\n알레르기 정보: {', '.join(allergen_vocab)}")
+            
+            return "\n".join(context_parts)
+            
+        except Exception as e:
+            print(f"[메뉴 컨텍스트 생성 실패] {e}")
+            return ""
+    
+    def _search_menu_items(self, query: str) -> list:
+        """메뉴 검색 기능"""
+        if not self.menu_data:
+            return []
+        
+        try:
+            items = self.menu_data.get('items', [])
+            results = []
+            query_lower = query.lower()
+            
+            for item in items:
+                name = item.get('name', '').lower()
+                category = item.get('category', '').lower()
+                notes = item.get('notes', '').lower()
+                
+                # 이름, 카테고리, 메모에서 검색
+                if (query_lower in name or 
+                    query_lower in category or 
+                    query_lower in notes):
+                    results.append(item)
+            
+            return results
+            
+        except Exception as e:
+            print(f"[메뉴 검색 실패] {e}")
+            return []
     
     def _init_audio_system(self):
         """오디오 시스템 초기화"""
@@ -262,14 +361,33 @@ class VoiceChat:
             return
             
         try:
+            # 메뉴 컨텍스트 가져오기
+            menu_context = self._get_menu_context()
+            
+            # 시스템 프롬프트 구성
+            system_prompt = """당신은 친절하고 자연스러운 AI 키오스크입니다. 자연스럽고 명확하고 이해하기 쉽게 답변하세요. 
+너무 형식적이지 말고 친근한 톤으로 대화하세요. 
+주문을 도와주거나 메뉴를 추천해주세요.
+
+다음은 현재 매장의 메뉴 정보입니다. 이 정보를 바탕으로 정확한 메뉴 추천, 가격 안내, 알레르기 정보 등을 제공해주세요:
+
+{menu_context}
+
+메뉴 관련 질문에 답할 때는 위의 메뉴 정보를 정확히 참고하여 답변해주세요. 
+- 가격, 알레르기 정보, 영양 정보 등을 포함하여 친절하게 안내해주세요
+- 특정 메뉴에 대해 질문받으면 해당 메뉴의 상세 정보를 제공해주세요
+- 메뉴 추천 요청 시 사용자의 선호도나 제약사항(알레르기, 식단 등)을 고려해주세요
+- 비건, 채식주의자, 돼지고기 금기 등의 식단 제약사항이 있으면 해당 조건에 맞는 메뉴를 추천해주세요
+- 칼로리나 영양 정보에 대한 질문에도 정확히 답변해주세요""".format(menu_context=menu_context)
+            
             # 스트리밍 응답 생성
             stream = self.client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
-                    {"role": "system", "content": "당신은 친절하고 자연스러운 AI 어시스턴트입니다. 사용자와 자연스럽게 대화하며, 명확하고 이해하기 쉽게 답변하세요. 너무 형식적이지 말고 친근한 톤으로 대화하세요."},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_text},
                 ],
-                temperature=0.7,
+                temperature=0,
                 stream=True
             )
             
@@ -404,7 +522,8 @@ class VoiceChat:
     def run(self) -> None:
         """메인 실행 루프"""
         # 초기 프롬프트 (한 번만 재생)
-        initial_prompt = "안녕하세요! 저는 여러분을 도와드릴 AI 어시스턴트입니다. 무엇을 도와드릴까요?"
+        menu_count = len(self.menu_data.get('items', [])) if self.menu_data else 0
+        initial_prompt = f"안녕하세요! 저는 {self.menu_data.get('store', '키오스크')}의 AI 어시스턴트입니다. {menu_count}개의 메뉴를 준비했어요. 메뉴 추천이나 주문을 도와드릴까요?"
         print(f"[초기 프롬프트] {initial_prompt}")
         
         # 초기 프롬프트 재생 전 시스템 안정화를 위한 지연
