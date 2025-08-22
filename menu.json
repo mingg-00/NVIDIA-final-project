@@ -8,6 +8,7 @@
       "id": "item_001",
       "name": "청양 통새우버거",
       "category": "메인(버거)",
+      "price": 12900,
       "allergens": [
         "달걀",
         "밀",
@@ -37,6 +38,7 @@
       "id": "item_002",
       "name": "치킨버거",
       "category": "메인(버거)",
+      "price": 8900,
       "allergens": [
         "달걀",
         "밀",
@@ -66,6 +68,7 @@
       "id": "item_003",
       "name": "데리버거",
       "category": "메인(버거)",
+      "price": 9500,
       "allergens": [
         "달걀",
         "밀",
@@ -95,6 +98,7 @@
       "id": "item_004",
       "name": "모짜렐라 버거",
       "category": "메인(버거)",
+      "price": 10500,
       "allergens": [
         "달걀",
         "밀",
@@ -123,6 +127,7 @@
       "id": "item_005",
       "name": "불고기버거",
       "category": "메인(버거)",
+      "price": 11900,
       "allergens": [
         "밀",
         "대두",
@@ -151,6 +156,7 @@
       "id": "item_006",
       "name": "멕시칸 랩",
       "category": "메인(랩)",
+      "price": 8500,
       "allergens": [
         "달걀",
         "우유",
@@ -179,6 +185,7 @@
       "id": "item_007",
       "name": "연어 포케볼",
       "category": "메인(보울)",
+      "price":13900,
       "allergens": [
         "대두",
         "밀"
@@ -203,6 +210,7 @@
       "id": "item_008",
       "name": "로스트 닭다리살 샐러디",
       "category": "메인(샐러디)",
+      "price":11500,
       "allergens": [
         "우유",
         "대두",
@@ -231,6 +239,7 @@
       "id": "item_009",
       "name": "두부 단호박 샐러디",
       "category": "메인(샐러디)",
+      "price":9500,
       "allergens": [
         "대두",
         "밀"
@@ -255,6 +264,7 @@
       "id": "item_010",
       "name": "두부 포케볼",
       "category": "메인(보울)",
+      "price":9900,
       "allergens": [
         "대두",
         "호두"
@@ -279,6 +289,7 @@
       "id": "item_011",
       "name": "감자튀김",
       "category": "사이드",
+      "price":3500,
       "allergens": [
         "대두",
         "토마토"
@@ -303,6 +314,7 @@
       "id": "item_012",
       "name": "치즈스틱",
       "category": "사이드",
+      "price":4500,
       "allergens": [
         "밀",
         "대두",
@@ -329,6 +341,7 @@
       "id": "item_013",
       "name": "콜라",
       "category": "음료",
+      "price":2000,
       "allergens": [],
       "nutrition": {
         "calorie_kcal": 127.0,
@@ -350,6 +363,7 @@
       "id": "item_014",
       "name": "사이다",
       "category": "음료",
+      "price":2000,
       "allergens": [],
       "nutrition": {
         "calorie_kcal": 133.0,
@@ -371,6 +385,7 @@
       "id": "item_015",
       "name": "아이스크림",
       "category": "디저트",
+      "price":4500,
       "allergens": [
         "우유",
         "밀",
@@ -396,6 +411,7 @@
       "id": "item_016",
       "name": "팥빙수",
       "category": "디저트",
+      "price":7500,
       "allergens": [
         "우유"
       ],
