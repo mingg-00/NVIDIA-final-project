@@ -10,8 +10,17 @@ import threading
 import queue
 import time
 
-from utils.deepface_webcam import get_predicted_age
-from voice.voice_chat import VoiceChat
+# Heavy dependencies are imported lazily to allow the server to start
+# even when optional CV/audio packages are not installed yet.
+try:
+    from utils.deepface_webcam import get_predicted_age  # type: ignore
+except Exception:
+    get_predicted_age = None  # type: ignore
+
+try:
+    from voice.voice_chat import VoiceChat  # type: ignore
+except Exception:
+    VoiceChat = None  # type: ignore
 
 app = FastAPI(title="Kiosk Face Recognition & Voice Chat API", version="1.0.0")
 
@@ -76,8 +85,11 @@ async def recognize_face(camera_index: int = 0):
         print(f"[API] 얼굴 인식 요청 시작 - 카메라 인덱스: {camera_index}")
         print(f"{'='*50}")
         
-        # 얼굴 인식 및 나이 예측
-        age = get_predicted_age(camera_index=camera_index)
+        # 얼굴 인식 및 나이 예측 (의존성 확인)
+        if get_predicted_age is None:
+            raise HTTPException(status_code=503, detail="얼굴 인식 모듈이 로드되지 않았습니다. 관련 의존성을 설치하세요 (opencv-python, deepface).")
+
+        age = get_predicted_age(camera_index=camera_index)  # type: ignore
         
         if age is None:
             print("[API] ❌ 얼굴 인식 실패 - 얼굴을 찾을 수 없음")
@@ -134,8 +146,15 @@ async def start_voice_chat(request: VoiceChatRequest):
             voice_chat_active = False
             voice_chat_thread.join(timeout=2.0)
         
-        # 새로운 음성 챗봇 인스턴스 생성
-        voice_chat_instance = VoiceChat()
+        # 새로운 음성 챗봇 인스턴스 생성 (의존성 확인)
+        if VoiceChat is None:
+            return VoiceChatResponse(
+                success=False,
+                message="음성 챗봇 모듈이 로드되지 않았습니다. 관련 의존성을 설치하세요 (openai, sounddevice, numpy).",
+                session_active=False,
+            )
+
+        voice_chat_instance = VoiceChat()  # type: ignore
         voice_chat_active = True
         
         # 별도 스레드에서 음성 챗봇 실행
