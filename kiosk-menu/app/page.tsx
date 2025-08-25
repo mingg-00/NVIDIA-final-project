@@ -430,6 +430,15 @@ export default function KioskMenu() {
   const [showStaffCall, setShowStaffCall] = useState(false)                   // 직원 호출 모달 표시 여부
 
   // ========================================
+  // 얼굴 인식 및 API 관련 상태
+  // ========================================
+  const [faceRecognitionLoading, setFaceRecognitionLoading] = useState(false) // 얼굴 인식 진행 중 여부
+  const [faceRecognitionResult, setFaceRecognitionResult] = useState<any>(null) // 얼굴 인식 결과
+  const [showFaceRecognitionModal, setShowFaceRecognitionModal] = useState(false) // 얼굴 인식 결과 모달
+  const [voiceChatActive, setVoiceChatActive] = useState(false) // 음성 챗봇 활성화 상태
+  const [voiceChatPolling, setVoiceChatPolling] = useState<NodeJS.Timeout | null>(null) // 음성 챗봇 명령 폴링 타이머
+
+  // ========================================
   // 설정 모달 상태
   // ========================================
   const [showAllergySettings, setShowAllergySettings] = useState(false)       // 알레르기 설정 모달 표시 여부
@@ -701,16 +710,31 @@ export default function KioskMenu() {
    * 역할:
    * - 헤더의 주문 방식 버튼 클릭 시 실행
    * - 현재 주문을 취소하고 처음부터 다시 시작
-   * - 모든 주문 관련 상태를 초기화 (장바구니, 필터, 요청사항 등)
+   * - 모든 주문 관련 상태를 초기화 (장바구니, 필터, 요청사항, 음성 챗봇 등)
    * - 주문 방식 선택 화면으로 화면 전환
    */
   const handleOrderTypeClick = () => {
+    // 음성 챗봇 중지
+    if (voiceChatActive) {
+      fetch('http://localhost:8000/stop-voice-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      }).catch(error => console.log('음성 챗봇 중지 중 오류:', error))
+    }
+    
+    // 모든 상태 초기화
     setCurrentView("orderType")
     setCart([])
     setSpecialRequests("")
     setAllergyFilter([])
     setDietFilter("일반")
     setOrderType(null)
+    setElderlyMode(true)  // 기본값을 어르신 모드로 설정 (처음 시작할 때)
+    setVoiceChatActive(false)
+    setFaceRecognitionResult(null)
+    setShowFaceRecognitionModal(false)
   }
 
     /**
@@ -770,7 +794,8 @@ export default function KioskMenu() {
    * 
    * 역할:
    * - 메뉴 화면에서만 동작하는 비활성 타이머 설정
-   * - 15초간 사용자 입력이 없으르 도움 팝업 표시
+   * - 15초간 사용자 입력이 없으면 도움 팝업 표시
+   * - 단, 60세 이상 어르신이고 음성 챗봇이 활성화된 경우에는 팝업 표시하지 않음
    * - 클릭, 키보드, 터치 이벤트를 모두 모니터링
    * - 활동 감지 시 타이머 리셋
    * - 컴포넌트 언마운트 시 이벤트 리스너 정리
@@ -782,6 +807,11 @@ export default function KioskMenu() {
     const resetTimer = () => {
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
+        // 60세 이상 어르신이고 음성 챗봇이 활성화된 경우 팝업 표시하지 않음
+        if (elderlyMode && voiceChatActive) {
+          console.log('[비활성 타이머] 어르신 음성 모드에서는 비활성 팝업을 표시하지 않습니다.')
+          return
+        }
         setShowInactivityPopup(true)
       }, 15000)
     }
@@ -803,7 +833,7 @@ export default function KioskMenu() {
       document.removeEventListener("keypress", handleActivity)
       document.removeEventListener("touchstart", handleActivity)
     }
-  }, [currentView])
+  }, [currentView, elderlyMode, voiceChatActive])
 
     /**
    * 알레르기 필터를 토글하는 함수
@@ -892,6 +922,298 @@ export default function KioskMenu() {
    */
   const closeInactivityPopup = () => {
     setShowInactivityPopup(false)
+  }
+
+  /**
+   * 음성 챗봇 명령을 처리하는 함수
+   */
+  const processVoiceChatCommand = (command: any) => {
+    console.log('[음성 챗봇 명령]', command)
+    
+    switch (command.action) {
+      case 'set_allergy':
+        const allergens = command.data.allergens || []
+        console.log('알레르기 필터 설정:', allergens)
+        setAllergyFilter(allergens)
+        setShowAllergySettings(true)
+        setTimeout(() => setShowAllergySettings(false), 2000)
+        break
+        
+      case 'set_diet':
+        const dietType = command.data.diet_type || '일반'
+        console.log('식단 필터 설정:', dietType)
+        if (dietType === '비건') {
+          setDietFilter('비건')
+        } else if (dietType === '채식') {
+          setDietFilter('채식')
+        } else {
+          setDietFilter('일반')
+        }
+        setShowDietSettings(true)
+        setTimeout(() => setShowDietSettings(false), 2000)
+        break
+        
+      case 'set_category':
+        const category = command.data.category || '전체'
+        console.log('카테고리 설정:', category)
+        if (category === '메인') {
+          setSelectedCategory('메인')
+          setSelectedSubcategory('전체')
+        } else if (category === '사이드') {
+          setSelectedCategory('사이드')
+        } else if (category === '음료') {
+          setSelectedCategory('음료')
+        } else if (category === '디저트') {
+          setSelectedCategory('디저트')
+        }
+        // 카테고리 변경 알림
+        setShowAllergySettings(true)
+        setTimeout(() => setShowAllergySettings(false), 2000)
+        break
+        
+      case 'set_subcategory':
+        const subcategory = command.data.subcategory || '전체'
+        console.log('서브카테고리 설정:', subcategory)
+        setSelectedCategory('메인')
+        setSelectedSubcategory(subcategory)
+        // 서브카테고리 변경 알림
+        setShowDietSettings(true)
+        setTimeout(() => setShowDietSettings(false), 2000)
+        break
+        
+      case 'add_to_cart':
+        const menuName = command.data.menu_name
+        const quantity = command.data.quantity || 1
+        console.log('장바구니에 추가:', menuName, quantity)
+        
+        // 메뉴 찾기
+        const menuItem = menuItems.find(item => 
+          item.name === menuName || 
+          item.name.includes(menuName) ||
+          menuName.includes(item.name)
+        )
+        
+        if (menuItem) {
+          // 기존 장바구니 아이템 확인
+          const existingItem = cart.find(cartItem => cartItem.id === menuItem.id)
+          if (existingItem) {
+            // 수량 업데이트
+            setCart(prev => prev.map(item => 
+              item.id === menuItem.id 
+                ? { ...item, quantity: item.quantity + quantity }
+                : item
+            ))
+          } else {
+            // 새로 추가
+            setCart(prev => [...prev, { ...menuItem, quantity }])
+          }
+          console.log(`${menuName} ${quantity}개가 장바구니에 추가되었습니다.`)
+          // 장바구니 추가 성공 알림
+          setShowAllergySettings(true)
+          setTimeout(() => setShowAllergySettings(false), 2000)
+        } else {
+          console.log(`메뉴를 찾을 수 없습니다: ${menuName}`)
+          // 메뉴 찾기 실패 알림
+          setShowDietSettings(true)
+          setTimeout(() => setShowDietSettings(false), 2000)
+        }
+        break
+        
+      case 'go_to_payment':
+        console.log('결제 화면으로 이동')
+        setCurrentView('payment')
+        break
+        
+      default:
+        console.log('알 수 없는 명령:', command.action)
+    }
+  }
+
+  /**
+   * 음성 챗봇 명령을 폴링하는 함수
+   */
+  const pollVoiceChatCommands = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/voice-chat/commands', {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+      
+      if (response.ok) {
+        const result = await response.json()
+        if (result.success && result.commands && result.commands.length > 0) {
+          console.log('[음성 챗봇] 새로운 명령들:', result.commands.length)
+          
+          // 각 명령 처리
+          result.commands.forEach((command: any) => {
+            processVoiceChatCommand(command)
+          })
+        }
+      }
+    } catch (error) {
+      console.error('[음성 챗봇 폴링 오류]', error)
+    }
+  }
+
+  /**
+   * 음성 챗봇 명령 폴링을 시작/중지하는 useEffect
+   */
+  useEffect(() => {
+    if (voiceChatActive) {
+      // 폴링 시작
+      const timer = setInterval(pollVoiceChatCommands, 1000) // 1초마다 폴링
+      setVoiceChatPolling(timer)
+      console.log('[음성 챗봇] 명령 폴링 시작')
+      
+      return () => {
+        if (timer) {
+          clearInterval(timer)
+          console.log('[음성 챗봇] 명령 폴링 중지')
+        }
+      }
+    } else {
+      // 폴링 중지
+      if (voiceChatPolling) {
+        clearInterval(voiceChatPolling)
+        setVoiceChatPolling(null)
+      }
+    }
+  }, [voiceChatActive])
+
+  /**
+   * 얼굴 인식 API를 호출하는 함수
+   * 
+   * 역할:
+   * - FastAPI 서버의 /face-recognition 엔드포인트 호출
+   * - 웹캠을 통해 얼굴을 인식하고 나이를 예측
+   * - 60세 이상/미만 분류 결과 반환
+   */
+  const callFaceRecognitionAPI = async () => {
+    try {
+      setFaceRecognitionLoading(true)
+      
+      const response = await fetch('http://localhost:8000/face-recognition', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ camera_index: 0 })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      return result
+      
+    } catch (error) {
+      console.error('얼굴 인식 API 호출 실패:', error)
+      return {
+        success: false,
+        error_message: '얼굴 인식 서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.'
+      }
+    } finally {
+      setFaceRecognitionLoading(false)
+    }
+  }
+
+  /**
+   * 음성 챗봇 시작 API를 호출하는 함수
+   * 
+   * 역할:
+   * - FastAPI 서버의 /start-voice-chat 엔드포인트 호출
+   * - 60세 이상 사용자를 위한 음성 챗봇 세션 시작
+   */
+  const startVoiceChatAPI = async (orderType: "dineIn" | "takeOut") => {
+    try {
+      const response = await fetch('http://localhost:8000/start-voice-chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ order_type: orderType })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const result = await response.json()
+      return result
+      
+    } catch (error) {
+      console.error('음성 챗봇 시작 API 호출 실패:', error)
+      return {
+        success: false,
+        message: '음성 챗봇 서버에 연결할 수 없습니다.'
+      }
+    }
+  }
+
+  /**
+   * 주문 방식 선택 및 얼굴 인식 처리 함수
+   * 
+   * 역할:
+   * - 먹고가기/포장 버튼 클릭 시 실행
+   * - 얼굴 인식을 수행하여 나이 확인
+   * - 60세 이상이면 어르신 모드 + 음성 챗봇 시작, 미만이면 일반 메뉴로 진행
+   */
+  const handleOrderTypeSelection = async (type: "dineIn" | "takeOut") => {
+    setOrderType(type)
+    
+    // 얼굴 인식 시작
+    setFaceRecognitionLoading(true)
+    setShowFaceRecognitionModal(true)
+    
+    const result = await callFaceRecognitionAPI()
+    setFaceRecognitionResult(result)
+    
+    if (result.success) {
+      if (result.is_elderly) {
+        // 디버깅용: 실제로는 60세 미만 사용자 - 어르신 모드 자동 활성화 + 음성 챗봇 시작
+        console.log('디버깅 모드: 60세 미만 사용자 -> 어르신 모드 + 음성 챗봇 시작')
+        
+        // 어르신 모드 자동 활성화
+        setElderlyMode(true)
+        
+        // 음성 챗봇 시작
+        const voiceChatResult = await startVoiceChatAPI(type)
+        
+        setTimeout(() => {
+          setShowFaceRecognitionModal(false)
+          if (voiceChatResult.success) {
+            // 음성 챗봇 시작 성공 - 어르신 모드 메뉴로 이동
+            setVoiceChatActive(true)  // 음성 챗봇 활성화 상태 설정
+            setCurrentView("menu")
+            // 음성 챗봇 안내 표시
+            alert("어르신을 위한 음성 주문 시스템이 시작되었습니다. 마이크에 대고 주문해주세요.")
+          } else {
+            // 음성 챗봇 시작 실패 - 어르신 모드 일반 메뉴로 진행
+            setVoiceChatActive(false)
+            setCurrentView("menu")
+            alert("음성 주문 시스템 연결에 실패했습니다. 화면을 터치하여 주문해주세요.")
+          }
+        }, 2000)
+      } else {
+        // 디버깅용: 실제로는 60세 이상 사용자 - 일반 모드로 진행
+        console.log('디버깅 모드: 60세 이상 사용자 -> 일반 메뉴로 진행')
+        setElderlyMode(false)  // 일반 모드 설정
+        setTimeout(() => {
+          setShowFaceRecognitionModal(false)
+          setCurrentView("menu")
+        }, 2000)
+      }
+    } else {
+      // 얼굴 인식 실패 - 에러 표시 후 일반 메뉴로 진행
+      setElderlyMode(false)  // 기본값으로 일반 모드
+      setTimeout(() => {
+        setShowFaceRecognitionModal(false)
+        setCurrentView("menu")
+      }, 3000)
+    }
   }
 
   return (
@@ -1227,6 +1549,75 @@ export default function KioskMenu() {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* 얼굴 인식 결과 모달 */}
+      {showFaceRecognitionModal && (
+        <Dialog open={showFaceRecognitionModal} onOpenChange={() => {}}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-center text-xl">얼굴 인식 진행 중</DialogTitle>
+              <DialogDescription className="text-center">
+                {faceRecognitionLoading 
+                  ? "카메라로 얼굴을 인식하고 있습니다. 잠시만 기다려주세요."
+                  : "얼굴 인식이 완료되었습니다."
+                }
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="flex flex-col items-center space-y-4">
+              {faceRecognitionLoading ? (
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+              ) : faceRecognitionResult ? (
+                <div className="text-center space-y-3">
+                  {faceRecognitionResult.success ? (
+                    <>
+                      <div className="text-4xl mb-2">
+                        {faceRecognitionResult.is_elderly ? "👴" : "🙂"}
+                      </div>
+                      <div className="text-lg font-semibold">
+                        감지된 나이: {faceRecognitionResult.age}세
+                      </div>
+                      <div className="text-lg">
+                        분류: <span className={faceRecognitionResult.is_elderly ? "text-blue-600 font-bold" : "text-gray-600"}>
+                          {faceRecognitionResult.age_category}
+                        </span>
+                      </div>
+                      
+                      {faceRecognitionResult.is_elderly ? (
+                        <div className="bg-blue-50 p-3 rounded-lg">
+                          <p className="text-blue-800 text-sm">
+                            [디버깅 모드] 60세 미만 → 어르신 음성 주문 시스템을 시작합니다.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 p-3 rounded-lg">
+                          <p className="text-gray-700 text-sm">
+                            [디버깅 모드] 60세 이상 → 일반 메뉴 화면으로 이동합니다.
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-4xl mb-2">❌</div>
+                      <div className="text-lg font-semibold text-red-600">얼굴 인식 실패</div>
+                      <div className="text-sm text-gray-600">
+                        {faceRecognitionResult.error_message || "얼굴을 인식할 수 없습니다."}
+                      </div>
+                      <div className="bg-yellow-50 p-3 rounded-lg">
+                        <p className="text-yellow-800 text-sm">
+                          일반 메뉴 화면으로 이동합니다.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {/* TTS 안내 배너 */}
       {showTTSBanner && (
         <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4">
@@ -1370,21 +1761,17 @@ export default function KioskMenu() {
 
           <div className="space-y-4">
             <Button
-              onClick={() => {
-                setOrderType("dineIn")
-                setCurrentView("menu")
-              }}
+              onClick={() => handleOrderTypeSelection("dineIn")}
               className="w-full h-16 text-lg"
+              disabled={faceRecognitionLoading}
             >
               매장에서 식사
             </Button>
 
             <Button
-              onClick={() => {
-                setOrderType("takeOut")
-                setCurrentView("menu")
-              }}
+              onClick={() => handleOrderTypeSelection("takeOut")}
               className="w-full h-16 text-lg"
+              disabled={faceRecognitionLoading}
             >
               포장
             </Button>
@@ -1605,28 +1992,94 @@ export default function KioskMenu() {
           </div>
 
           {elderlyMode && (
-            <div className="fixed bottom-0 left-0 right-0 bg-white border-gray-200 border-t p-4">
-              <div className="max-w-7xl mx-auto flex items-center justify-center space-x-4">
-                <Button
-                  onClick={toggleVoiceRecording}
-                  variant={isVoiceRecording ? "default" : "outline"}
-                  size="lg"
-                  className="flex items-center space-x-2"
-                >
-                  <Mic className="w-5 h-5" />
-                  <span>{isVoiceRecording ? "음성 인식 중..." : "말하기"}</span>
-                </Button>
+            <div className="fixed bottom-0 left-0 right-0 bg-white border-gray-200 border-t p-4 shadow-lg">
+              <div className="max-w-7xl mx-auto">
+                {voiceChatActive ? (
+                  // 음성 챗봇 활성화 상태
+                  <div className="flex flex-col items-center space-y-3">
+                    <div className="bg-blue-50 p-3 rounded-lg w-full text-center">
+                      <p className="text-blue-800 font-medium text-lg">
+                        🎙️ 음성 주문 시스템이 활성화되었습니다
+                      </p>
+                      <p className="text-blue-600 text-sm">
+                        마이크에 대고 원하시는 메뉴를 말씀해주세요
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center justify-center space-x-4">
+                      <Button
+                        onClick={toggleVoiceRecording}
+                        variant={isVoiceRecording ? "default" : "outline"}
+                        size="lg"
+                        className="flex items-center space-x-2 px-8 py-4 text-lg"
+                      >
+                        <Mic className="w-6 h-6" />
+                        <span>{isVoiceRecording ? "음성 인식 중..." : "음성으로 주문하기"}</span>
+                      </Button>
+                      
+                      <Button
+                        onClick={() => {
+                          setVoiceChatActive(false)
+                          alert("음성 주문을 종료했습니다. 화면을 터치하여 주문하시거나 '음성으로 주문하기' 버튼을 눌러주세요.")
+                        }}
+                        variant="outline"
+                        size="lg"
+                        className="text-lg px-6 py-4"
+                      >
+                        음성 주문 종료
+                      </Button>
+                    </div>
 
-                {/* 데시벨 레벨바 */}
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm">음성 레벨:</span>
-                  <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 transition-all duration-100"
-                      style={{ width: `${audioLevel}%` }}
-                    />
+                    {/* 데시벨 레벨바 */}
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm font-medium">음성 레벨:</span>
+                      <div className="w-40 h-3 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 transition-all duration-100"
+                          style={{ width: `${audioLevel}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // 일반 어르신 모드
+                  <div className="flex items-center justify-center space-x-4">
+                    <Button
+                      onClick={() => {
+                        setVoiceChatActive(true)
+                        startVoiceChatAPI(orderType || "dineIn")
+                        alert("음성 주문 시스템을 시작합니다.")
+                      }}
+                      variant="default"
+                      size="lg"
+                      className="flex items-center space-x-2 px-8 py-4 text-lg bg-blue-600 hover:bg-blue-700"
+                    >
+                      <Mic className="w-6 h-6" />
+                      <span>음성으로 주문하기</span>
+                    </Button>
+
+                    <Button
+                      onClick={toggleVoiceRecording}
+                      variant={isVoiceRecording ? "default" : "outline"}
+                      size="lg"
+                      className="flex items-center space-x-2 px-6 py-4 text-lg"
+                    >
+                      <Mic className="w-5 h-5" />
+                      <span>{isVoiceRecording ? "음성 인식 중..." : "말하기"}</span>
+                    </Button>
+
+                    {/* 데시벨 레벨바 */}
+                    <div className="flex items-center space-x-2">
+                      <span className="text-sm">음성 레벨:</span>
+                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500 transition-all duration-100"
+                          style={{ width: `${audioLevel}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
