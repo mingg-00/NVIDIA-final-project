@@ -16,7 +16,9 @@ from collections import deque
 from dotenv import load_dotenv
 from pathlib import Path
 
-load_dotenv("../.env")
+# Ensure .env is loaded from project root regardless of CWD
+_ENV_PATH = (Path(__file__).resolve().parent.parent / ".env").resolve()
+load_dotenv(_ENV_PATH)
 
 # openai 설치 확인 
 def _has_openai() -> bool:
@@ -28,8 +30,9 @@ def _has_openai() -> bool:
 
 class VoiceChat:
     def __init__(self):
-        self.base = Path(__file__).resolve().parent.parent # faceapi 디렉터리
-        self.tmp_dir = self.base / "/_tmp" # 오디오 파일 저장 경로
+        self.base = Path(__file__).resolve().parent.parent
+        # tmp 디렉터리 경로 수정 (절대경로 슬래시 제거)
+        self.tmp_dir = self.base / "_tmp"
         self.tmp_dir.mkdir(parents=True, exist_ok=True)
         
         # 메뉴 데이터 로드

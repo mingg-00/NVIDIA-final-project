@@ -18,24 +18,25 @@ from pathlib import Path
 
 def check_dependencies():
     """필수 의존성 확인"""
-    required_packages = [
-        'fastapi',
-        'uvicorn', 
-        'opencv-python',
-        'deepface',
-        'openai',
-        'sounddevice',
-        'numpy'
+    # pip 패키지명 -> import 모듈명 매핑
+    required_imports = [
+        ("fastapi", "fastapi"),
+        ("uvicorn", "uvicorn"),
+        ("opencv-python", "cv2"),  # opencv-python은 cv2로 import
+        ("deepface", "deepface"),
+        ("openai", "openai"),
+        # ("sounddevice", "sounddevice"),  # 선택적 의존성
+        ("numpy", "numpy"),
     ]
-    
+
     missing_packages = []
-    
-    for package in required_packages:
+
+    for pip_name, import_name in required_imports:
         try:
-            __import__(package.replace('-', '_'))
+            __import__(import_name)
         except ImportError:
-            missing_packages.append(package)
-    
+            missing_packages.append(pip_name)
+
     if missing_packages:
         print("❌ 다음 패키지들이 설치되지 않았습니다:")
         for package in missing_packages:
@@ -45,7 +46,7 @@ def check_dependencies():
         print("\n또는 requirements.txt로 일괄 설치:")
         print("   pip install -r requirements.txt")
         return False
-    
+
     return True
 
 

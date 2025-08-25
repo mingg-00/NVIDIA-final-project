@@ -1,6 +1,5 @@
 import cv2
 import time
-from deepface import DeepFace
 
 
 def capture_frame(camera_index=0):
@@ -134,6 +133,7 @@ def analyze_face_with_deepface(face_bgr):
 	Run DeepFace age/gender analysis on a face ROI (BGR ndarray).
 	"""
 	try:
+		from deepface import DeepFace
 		print(f"[DeepFace] 분석 시작 - 얼굴 크기: {face_bgr.shape}")
 		
 		face_rgb = cv2.cvtColor(face_bgr, cv2.COLOR_BGR2RGB)
