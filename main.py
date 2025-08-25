@@ -12,11 +12,13 @@ def get_age_from_webcam(camera_index: int = 0):
 def classify_age_from_webcam(camera_index: int = 0):
     """
     60세 이상/미만 분류 문자열을 반환합니다. (None 가능)
+    디버깅용: 조건이 반대로 설정됨
     """
     age = get_age_from_webcam(camera_index=camera_index)
     if age is None:
         return None
-    return "60세 이상" if age >= 60 else "60세 미만"
+    # 디버깅용: 60세 미만일 때 "60세 이상"으로 처리
+    return "60세 이상" if age < 60 else "60세 미만"
 
 
 def main():
